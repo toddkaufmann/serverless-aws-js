@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+    <head>
+	<title>Manage instances -- test AWS SDK for JavaScript</title>
+	<meta charset="utf-8">
+	<script src="https://sdk.amazonaws.com/js/aws-sdk-2.176.0.min.js"></script>
+    </head>
+
+    <body>
+	<!-- Credentials entry -->	
+	AWS Key:    <input type="text" placeholder="AKIA....." id="aws-key" />
+	Secret Key: <input type="text" placeholder="Zm9vLi4K.." id="aws-secretkey" />
+	<!-- this could be a drop down.. -->
+	AWS Region: <input type="text" id="aws-region" value="us-east-1" /> <br>
+	<hr>
+	<!--  -->
+	<button id="refresh-instances">Refresh instance status</button>
+	<br>
+	<div id="instances">Table of instances will appear here</div>
+	<hr>
+	<br>
+<!-- start instance  -->
+	<input id="startId" />
+	<button id="start-instance">Start instance</button>
+	<br>
+	<div id="startStatus"><i>[start status will appear here]</i></div>
+	<hr>
+
+<!-- stop instance  -->
+	<input id="stopId" />
+	<button id="stop-instance">Stop instance</button>
+	<br>
+	<div id="stopStatus"><i>[stop status will appear here]</i></div>
+	<hr>
+<!-- link to src here .. -->
+
+
+	<script type="text/javascript">
+	 //         var appId = 'YOUR_APP_ID';
+	 //         var roleArn = 'YOUR_ROLE_ARN';
+	 //         var bucketName = 'YOUR_BUCKET_NAME';
+	 //         AWS.config.region = 'YOUR_BUCKET_REGION';
+
+	 // AWS.config.region = 'us-east-1'; //  'YOUR_BUCKET_REGION';
+	 //x	 /home/todd/dev/skymark/beanstalk.svn/ncbsw/trunk/vagrant/aws.sh
+
+	 // Import the AWS SDK
+	 //	 var AWS = require('aws-sdk');
+
+	 // Better: use cognito or a login provider;  see: best practices
+	 //
+
+	 var AWS_KEY = document.getElementById('aws-key').value;
+	 var AWS_SECRETKEY = document.getElementById('aws-secretkey').value;
+	 // var AWS_REGION = 'us-east-1';
+	 var AWS_REGION = document.getElementById('aws-region').value;
+
+	 console.log('set some stuff');
+
+	 function updateConfig() {
+	     AWS_KEY = document.getElementById('aws-key').value;
+	     AWS_SECRETKEY = document.getElementById('aws-secretkey').value;
+	     AWS_REGION = document.getElementById('aws-region').value;
+	     // you could hardcode config here, but you will surely be hacked:
+	     // AWS_KEY = "EVERYONEMIGHTSEEITTHOUGH";
+	     // var AWS_SECRETKEY = "all/your/base/are/belong/to/us/123456789";
+	     // 'This can also be done directly on the service client'
+	     var config = {region: AWS_REGION,
+			   credentials: {  accessKeyId: AWS_KEY,
+					   secretAccessKey: AWS_SECRETKEY }
+	     };
+	     AWS.config.update(config );	     
+	 }
+
+	 console.log(" think i updated config");
+
+	 var ec2;
+	 function getEc2Service() {
+	     if ( ec2 == undefined ) {
+		 ec2 = new AWS.EC2( {region: AWS_REGION} );  // {region: 'us-east-1', apiVersion: '2014-10-01'};
+	     }
+	     console.log(" .. got ec2"); // debug
+	     return ec2;
+	 }
+
+	 // we need to set region here ?  w
+	 // AWS.config.ec2 = {region: 'us-west-2', apiVersion: '2016-04-01'};
+
+	 if ( false ) {
+	     // you could use this for simple testing of your credentials,
+	     // or to get all regions
+	     updateConfig();
+	     getEc2Service().describeRegions({}, function(err, data) {
+		 if (err) console.log(err, err.stack); // an error occurred
+		 else     console.log(data);
+	     });
+	 }
+
+	 console.log('sent request for describeRegions ..');
+
+	 var params = {
+	     DryRun: false, // true || false,
+	     // Filters: [ {Name: 'STRING_VALUE', Values: ['STRING_VALUE',]},],
+	     // InstanceIds: ['STRING_VALUE',],
+	     // MaxResults: 0,
+	     // NextToken: 'STRING_VALUE'
+	 };
+
+	 var refresh = document.getElementById('refresh-instances');
+	 refresh.addEventListener('click', function () {
+	     updateConfig();
+	     populateInstanceTable()
+	 }, false);
+
+	 
+	 function jsonToDiv( j, id ) {
+	     document.getElementById(id)
+		     .innerHTML = JSON.stringify( j );
+	 }
+
+
+	 instanceData = 'waiting';
+	 function populateInstanceTable() {
+	     var divId = 'instances';
+	     getEc2Service().describeInstances(params, function(err, data) {
+		 if (err) {
+		     console.log(err, err.stack); // an error occurred
+		     jsonToDiv(  err, divId );
+		 } else {
+		     instanceData = data;
+		     console.log(data);           // successful response
+		     console.log('instanceDataToTable( instanceData ) -- now put the inst data into a table');
+		     var tableDiv = document.getElementById(divId);
+		     tableDiv.innerHTML = instanceDataToTable( instanceData );
+		 }
+	     });
+	 }
+	 // populateInstanceTable();
+	 console.log('call to describeInstances done.');
+
+
+	 // returns 
+	 function instanceDataToTable( data ) {
+	     var rows = [];
+	     var res = data.Reservations;
+	     res.forEach( function(r) {
+		 var i = r.Instances;
+		 if ( i.length > 1 ) {
+		     rows.push( '<tr><td>!! instances length is ' + i.length + '</td></tr>');
+		 }
+		 i.forEach( function( ii ) {
+		     rows.push( instanceInfoToRow( ii ) );
+		 });
+	     });
+	     return "<table border=1>\n" + headerRow() + rows.join("\n") + "\n</table>";
+	 }
+
+	 function headerRow() {
+	     var fields =
+		 [ 'AMI', 'InstanceId',
+		   'InstanceType',
+		   'LaunchTime',
+		   'State', // : {Code: 80, Name: "stopped"}
+		   'StateTransitionReason', // : "User initiated (2016-03-31 16:44:59 GMT)"SubnetId: "subnet-2071b20b"
+		   'Tags'];
+	     return vToRow( fields );
+	 }
+	 function vToRow( v ) {
+	     var h = v.map( function(s) { return "<td>"+s+"</td>"; }
+	     ).join('');
+	     
+	     return '<tr>' + h + '</tr>';
+	 }
+
+	 function instanceInfoToRow( i ) {
+	     // TODO join with tr/td
+	     var taginfo = i.Tags.map( function(t) { return t.Key + "=" + t.Value; } ).join(',');
+	     var info = [ i.ImageId, // AMI
+			  i.InstanceId,
+			  i.InstanceType, //  "t2.micro"
+			  // KeyName: "aws201108"
+		 i.LaunchTime, // : Fri Jan 09 2015 13:47:02 GMT-0500 (EST) {}
+			  i.State.Name, // : {Code: 80, Name: "stopped"}
+			  i.StateTransitionReason, // : "User initiated (2016-03-31 16:44:59 GMT)"SubnetId: "subnet-2071b20b"
+			  taginfo // i.Tags
+	     ];
+	     return  vToRow( info );
+	 }
+
+
+
+	 //x	 var results = document.getElementById('results');
+
+	 // var button = document.getElementById('upload-button');
+	 // button.addEventListener('click', function () {
+	 // //  your code here 
+	 // }, false);
+
+
+	 var startButton = document.getElementById('start-instance');
+	 startButton.addEventListener('click', function() {
+	     var divId = 'startStatus';
+	     // get id
+	     var instId = document.getElementById('startId').value;
+	     // ec2.runIns
+	     var params = {
+		 InstanceIds: [ instId ],
+		 // AdditionalInfo: 'STRING_VALUE',
+		 DryRun: false // true || false
+	     };
+	     updateConfig();
+
+	     getEc2Service().startInstances(params, function(err, data) {
+		 console.log("output to: " + divId);
+		 jsonToDiv( { hypothesis: 'this should work' }, divId );
+		 if (err) {
+		     console.log(err, err.stack); // an error occurred
+		     jsonToDiv( err, divId );
+		 } else {
+		     g_start = data;
+		     console.log("see: g_start = data;");
+		     console.log(data);           // successful response
+		     jsonToDiv(  data, divId );
+		 }
+	     });
+	 });
+
+	 // stop is like start ..
+	 // [too much duplicated code here]
+	 var stopButton = document.getElementById('stop-instance');
+	 stopButton.addEventListener('click', function() {
+	     var divId = 'stopStatus';
+	     // get id
+	     var instId = document.getElementById('stopId').value;
+	     // ec2.runIns
+	     var params = {
+		 InstanceIds: [ instId ],
+		 // AdditionalInfo: 'STRING_VALUE',
+		 DryRun: false // true || false
+	     };
+	     updateConfig();
+	     getEc2Service().stopInstances(params, function(err, data) {
+		 if (err) {
+		     console.log(err, err.stack); // an error occurred
+		     jsonToDiv( err, divId );
+		 } else {
+		     g_stop = data; // debug
+		     console.log("see: g_stop = data;");
+		     console.log(data);           // successful response
+		     jsonToDiv(  data, divId );
+		 }
+	     });
+	 });
+
+
+	</script>
+    </body>
+</html>
